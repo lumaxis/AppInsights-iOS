@@ -28,7 +28,7 @@ extern NSString *const __attribute__((unused)) kMSAIMetricsLastAppVersion;
 
 //#define MSAI_SDK_URL          @"https://dc.services.visualstudio.com/"
 #define MSAI_CRASH_DATA_URL          @"https://deathray-int.trafficmanager.net/v2/track"
-#define MSAI_EVENT_DATA_URL       @"https://dc-int.services.visualstudio.com/v2/track"
+#define MSAI_EVENT_DATA_URL       @"https://vortex-sandbox.data.microsoft.com/collect/v1"
 #define MSAI_SDK_URL              MSAI_EVENT_DATA_URL
 #define MSAI_TELEMETRY_PATH   @"v2/track"
 
