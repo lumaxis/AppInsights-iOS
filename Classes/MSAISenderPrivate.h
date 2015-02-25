@@ -58,11 +58,11 @@
 - (NSURLRequest *)requestForData:(NSData *)data urlString:(NSString *)urlString;
 
 /**
- *  Convert a collection of envelope objects to array of dictionaries.
+ *  Convert a collection of envelope objects to a string that's compatoble to our server endpoint.
  *
  *  @param envelopeArray array of envelope objects
  *
- *  @return a json array of envelope objects
+ *  @return a json string of envelope objects with each object in a new line
  */
 - (NSString *)jsonStringFromArray:(NSArray *)envelopeArray;
 
