@@ -64,7 +64,7 @@
  *
  *  @return a json array of envelope objects
  */
-- (NSArray *)jsonArrayFromArray:(NSArray *)envelopeArray;
+- (NSString *)jsonStringFromArray:(NSArray *)envelopeArray;
 
 
 @end

@@ -69,7 +69,7 @@
   if(bundle && bundle.count > 0 && !self.currentBundle) {
     self.currentBundle = bundle;
     NSError *error = nil;
-    NSData *json = [NSJSONSerialization dataWithJSONObject:[self jsonArrayFromArray:bundle] options:NSJSONWritingPrettyPrinted error:&error];
+    NSData *json = [[self jsonStringFromArray:bundle] dataUsingEncoding:NSUTF8StringEncoding];
     if(!error) {
       NSString *urlString = [[(MSAIEnvelope *)bundle[0] name] isEqualToString:@"Microsoft.ApplicationInsights.Crash"] ? MSAI_CRASH_DATA_URL : MSAI_EVENT_DATA_URL;
       NSURLRequest *request = [self requestForData:json urlString:urlString];
@@ -123,12 +123,12 @@
 
 #pragma mark - Helper
 
-- (NSArray *)jsonArrayFromArray:(NSArray *)envelopeArray{
-  NSMutableArray *array = [NSMutableArray new];
+- (NSString *)jsonStringFromArray:(NSArray *)envelopeArray{
+  NSMutableString *string = [NSMutableString new];
   for(MSAIEnvelope *envelope in envelopeArray){
-    [array addObject:[envelope serializeToDictionary]];
+    [string appendFormat:@"%@\n", [envelope serializeToString]];
   }
-  return array;
+  return [string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
 }
 
 - (NSURLRequest *)requestForData:(NSData *)data urlString:(NSString *)urlString {
