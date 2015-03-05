@@ -10,6 +10,7 @@ This document contains the following sections:
 - [Download & Extract](#download)
 - [Set up Xcode](#xcode) 
 - [Modify Code](#modify)
+- [Endpoints](#endpoints)
 - [iOS 8 Extensions](#extension)
 - [Additional Options](#options)
 
@@ -21,7 +22,7 @@ The SDK runs on devices with iOS 6.0 or higher.
 <a id="download"></a> 
 ## Download & Extract
 
-1. Download the latest [AppInsights SDK for iOS](https://rink.hockeyapp.net/apps/19e2b445f2769757bd4d384e56f1fc3b) framework.
+1. Download the latest [AppInsights SDK for iOS](https://github.com/Microsoft/AppInsights-iOS/releases/download/v1.0-alpha.2/AppInsights-1.0-alpha.2.zip) framework.
 
 2. Unzip the file. A new folder `AppInsights` is created.
 
@@ -30,125 +31,163 @@ The SDK runs on devices with iOS 6.0 or higher.
 <a id="xcode"></a> 
 ## Set up Xcode
 
-1. Drag & drop `AppInsights.embeddedframework` from your project directory to your Xcode project.
-
+1. Drag & drop `AppInsights.framework` from your project directory to your Xcode project.
 2. Similar to above, our projects have a group `Vendor`, so we drop it there.
-
 3. Select `Create groups for any added folders` and set the checkmark for your target. Then click `Finish`.
-
 4. Select your project in the `Project Navigator` (⌘+1).
-
 5. Select your app target.
-
 6. Select the tab `Build Phases`.
-
 7. Expand `Link Binary With Libraries`.
-
 8. Add the following system frameworks, if they are missing:
-
-		AssetsLibrary
-		Foundation
-		MobileCoreServices
-		Security
-		SystemConfiguration
-		UIKit
+- `Foundation`
+- `SystemConfiguration`
+- `UIKit`
+- `CoreTelephony`(only required if iOS > 7.0)
+9. Open the info.plist of your app target and add a new field of type *String*. Name it `MSAIInstrumentationKey` and set your AppInsights instrumentation key as its value.
 
 <a id="modify"></a> 
 ## Modify Code 
 
 ### Objective-C
 
-1. Open your `AppDelegate.m` file.
+2. Open your `AppDelegate.m` file.
+3. Add the following line at the top of the file below your own #import statements:
 
-2. Add the following line at the top of the file below your own #import statements:
+```objectivec
+#import <AppInsights/AppInsights.h>
+```
+4. Search for the method `application:didFinishLaunchingWithOptions:`
+5. Add the following lines to setup and start the AppInsights SDK:
 
-		#import <AppInsights/AppInsights.h>
+```objectivec
+[[MSAIAppInsights sharedInstance] setup];
+// Do some additional configuration if needed here
+...
+[[MSAIAppInsights sharedInstance] start];
+```
 
-3. Search for the method `application:didFinishLaunchingWithOptions:`
+You can also use the following shortcut:
 
-4. Add the following lines (Replace `INSTRUMENTATION_KEY` with the app instrumentation key of your app):
+```objectivec
+[MSAIAppInsights setup];
+[MSAIAppInsights start];
+```
 
-		[[MSAITelemetryManager sharedMSAIManager] configureWithInstrumentationKey:@"INSTRUMENTATION_KEY"];
-		[[MSAITelemetryManager sharedMSAIManager] startManager];
+6. Send some data to the server:
 
-5. Send some data to the server:
+```objectivec	
+// Send an event with custom properties and measuremnts data
+[MSAIMetricsManager trackEventWithName:@"Hello World event!"
+properties:@{@"Test property 1":@"Some value",
+@"Test property 2":@"Some other value"}
+mesurements:@{@"Test measurement 1":@(4.8),
+@"Test measurement 2":@(15.16),
+@"Test measurement 3":@(23.42)}];
 
-		// Send an event with custom properties and measuremnts data
-		[MSAIMetricsManager trackEventWithName:@"Hello World event!"
-									 properties:@{@"Test property 1":@"Some value",
-					 							  @"Test property 2":@"Some other value"}
-									mesurements:@{@"Test measurement 1":@(4.8),
-												  @"Test measurement 2":@(15.16),
-												  @"Test measurement 3":@(23.42)}];
+// Send a message
+[MSAIMetricsManager trackTraceWithMessage:@"Test message"];
 
-		// Send a message
-		[MSAIMetricsManager trackTraceWithMessage:@"Test message"];
+// Manually send pageviews (note: this will also be done automatically)
+[MSAIMetricsManager trackPageView:@"MyViewController"
+duration:300
+properties:@{@"Test measurement 1":@(4.8)}];
 
-		// Manually send pageviews
-		[MSAIMetricsManager trackPageView:@"MyViewController"
-								  duration:300
-								properties:@{@"Test measurement 1":@(4.8)}];
-
-		// Send a message
-		[MSAIMetricsManager trackMetricWithName:@"Test metric" 
-										   value:42.2];
+// Send custom metrics
+[MSAIMetricsManager trackMetricWithName:@"Test metric" 
+value:42.2];
+```
 
 *Note:* The SDK is optimized to defer everything possible to a later time while making sure e.g. crashes on startup can also be caught and each module executes other code with a delay some seconds. This ensures that applicationDidFinishLaunching will process as fast as possible and the SDK will not block the startup sequence resulting in a possible kill by the watchdog process.
 
 ### Swift
 
-1. Open your `AppDelegate.swift` file.
+2. Open your `AppDelegate.swift` file.
+3. Add the following line at the top of the file below your own #import statements:
 
-2. Add the following line at the top of the file below your own #import statements:
-
+```swift	
 #import AppInsights
+```
+4. Search for the method 
 
-3. Search for the method `application(application: UIApplication, didFinishLaunchingWithOptions launchOptions: [NSObject: AnyObject]?) -> Bool`
+```swift	
+application(application: UIApplication, didFinishLaunchingWithOptions launchOptions:[NSObject: AnyObject]?) -> Bool`
+```
+5. Add the following lines to setup and start the AppInsights SDK:
 
+```swift
+MSAIAppInsights.sharedInstance().setup();
+MSAIAppInsights.sharedInstance().start();
+```
 
-4. Add the following lines (Replace `INSTRUMENTATION_KEY` with the app instrumentation key of your app):
+You can also use the following shortcut:
 
-		MSAITelemetryManager.sharedMSAIManager().configureWithInstrumentationKey("INSTRUMENTATION_KEY");
-		MSAITelemetryManager.sharedMSAIManager().startManager();
-
+```swift
+MSAIAppInsights.setup();
+MSAIAppInsights.start();
+```
 5. Send some data to the server:
-    
-    	// Send an event
-    	MSAIMetricsManager.trackEventWithName("Test event")
-    
-    	// Send a message
-    	MSAIMetricsManager.trackTraceWithMessage("Test message")
-    
-    	// Manually send pageviews
-    	MSAIMetricsManager.trackPageView("Test PageView", duration: 2342, properties:["property1":"value1"])
-    
-    	// Send a message
-    	MSAIMetricsManager.trackMetricWithName("Test metric", value:42.2)
 
+```swift
+// Send an event with custom properties and measuremnts data
+MSAIMetricsManager.trackEventWithName(name:"Hello World event!", 
+properties:@{"Test property 1":"Some value",
+"Test property 2":"Some other value"},
+mesurements:@{"Test measurement 1":@(4.8),
+"Test measurement 2":@(15.16),
+"Test measurement 3":@(23.42)});
+
+// Send a message
+MSAIMetricsManager.trackTraceWithMessage(message:"Test message");
+
+// Manually send pageviews
+MSAIMetricsManager.trackPageView(pageView:"MyViewController",
+duration:300,
+properties:@{"Test measurement 1":@(4.8)});
+
+// Send a message
+MSAIMetricsManager.trackMetricWithName(name:"Test metric",
+value:42.2);
+```
+
+<a id="endpoints"></a> 
+## Endpoints 
+
+At this point exceptions as well as other telemetry data are sent to different endpoints.
+By default the following endpoints are used to work with the [Azure portal](https://portal.azure.com):
+
+* Exceptions: `https://dray-prod.aisvc.visualstudio.com/v2/track`
+* Telemetry Data: `https://dc.services.visualstudio.com/v2/track`
+
+To change those endpoints open the `AppInsights.h` file and change the following define statements:
+
+```objectivec
+#define MSAI_CRASH_DATA_URL   @"https://dray-prod.aisvc.visualstudio.com/v2/track"
+#define MSAI_EVENT_DATA_URL   @"https://dc.services.visualstudio.com/v2/track"
+```
 <a id="extensions"></a>
 ## iOS 8 Extensions
 
 The following points need to be considered to use AppInsights SDK iOS with iOS 8 Extensions:
 
-1. Each extension is required to use the same values for version (`CFBundleShortVersionString`) and build number (`CFBundleVersion`) as the main app uses. (This is required only if you are using the same INSTRUMENTATION_KEY for your app and extensions).
+1. Each extension is required to use the same values for version (`CFBundleShortVersionString`) and build number (`CFBundleVersion`) as the main app uses. (This is required only if you are using the same `MSAIInstrumentationKey` for your app and extensions).
 2. You need to make sure the SDK setup code is only invoked once. Since there is no `applicationDidFinishLaunching:` equivalent and `viewDidLoad` can run multiple times, you need to use a setup like the following example:
 
-		@interface TodayViewController () <NCWidgetProviding>
+```objectivec	
+@interface TodayViewController () <NCWidgetProviding>
+@property (nonatomic, assign) BOOL didSetupAppInsightsSDK;
+@end
 
-		@property (nonatomic, assign) BOOL didSetupAppInsightsSDK;
+@implementation TodayViewController
 
-		@end
-
-		@implementation TodayViewController
-
-		- (void)viewDidLoad {
-			[super viewDidLoad];
-			if (!self.didSetupAppInsightsSDK) {
-				[[MSAITelemetryManager sharedMSAIManager] configureWithInstrumentationKey:@"INSTRUMENTATION_KEY"];
-				[[MSAITelemetryManager sharedMSAIManager] startManager];
-				self.didSetupAppInsightsSDK = YES;
-			}
-		}
+- (void)viewDidLoad {
+[super viewDidLoad];
+if (!self.didSetupAppInsightsSDK) {
+[MSAIAppInsights setup];
+[MSAIAppInsights start];
+self.didSetupAppInsightsSDK = YES;
+}
+}
+```
 
 <a id="options"></a> 
 ## Additional Options
@@ -178,10 +217,7 @@ Instead of manually adding the missing frameworks, you can also use our bundled 
 **Important note:** Check if you overwrite any of the build settings and add a missing `$(inherited)` entry on the projects build settings level, so the `AppInsights.xcconfig` settings will be passed through successfully.
 
 7. If you are getting build warnings, then the `.xcconfig` setting wasn't included successfully or its settings in `Other Linker Flags` get ignored because `$(inherited)` is missing on project or target level. Either add `$(inherited)` or link the following frameworks manually in `Link Binary With Libraries` under `Build Phases`:
-
-		AssetsLibrary
-		Foundation
-		MobileCoreServices
-		Security
-		SystemConfiguration
-		UIKit
+- `Foundation`
+- `SystemConfiguration`
+- `UIKit`
+- `CoreTelephony`(only required if iOS > 7.0)

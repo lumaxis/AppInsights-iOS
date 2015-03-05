@@ -1,8 +1,6 @@
 //
 //  MSAIAppClientTests
-//  AppInsightsSDKTests
-//
-//  Created by Stephan Diederich on 06.09.13.
+//  AppInsightsTests
 //
 //
 
@@ -33,11 +31,6 @@
 }
 
 - (void)tearDown {
-# pragma clang diagnostic push
-# pragma clang diagnostic ignored "-Wimplicit"
-  __gcov_flush();
-# pragma clang diagnostic pop
-  
   [_sut cancelOperationsWithPath:nil method:nil];
   _sut = nil;
   

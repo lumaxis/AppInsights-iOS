@@ -27,7 +27,6 @@ should not need to set this delegate individually.
 
 @property (nonatomic, assign) PLCrashReporterCallbacks *crashCallBacks;
 @property (nonatomic, strong) NSFileManager *fileManager; //TODO remove when we refactor the persistence stuff out of crashmanager
-@property (nonatomic, strong) MSAIContext *appContext;
 @property (nonatomic, strong) NSMutableArray *crashFiles; //TODO remove when we refactor the persistence stuff out of crashmanager
 @property (nonatomic, strong) NSMutableDictionary *approvedCrashReports;
 @property (nonatomic, copy) NSString *settingsFile; //TODO remove when we refactor the persistence stuff out of crashmanager
@@ -46,19 +45,10 @@ should not need to set this delegate individually.
 *
 *  @param context the MSAIContext object
 */
-+ (void)startWithContext:(MSAIContext *)context;
 
 - (void)startManager;
 
 - (void)initValues;
-
-- (void)storeMetaDataForCrashReportFilename:(NSString *)filename;
-
-- (NSString *)userIDForCrashReport;
-
-- (NSString *)userNameForCrashReport;
-
-- (NSString *)userEmailForCrashReport;
 
 - (void)handleCrashReport;
 
@@ -70,7 +60,7 @@ should not need to set this delegate individually.
 
 - (void)createCrashReportForAppKill;
 
-- (void)sendNextCrashReport;
+- (void)createCrashReport;
 
 - (void)processCrashReportWithFilename:(NSString *)filename envelope:(MSAIEnvelope *)envelope;
 
@@ -81,8 +71,6 @@ should not need to set this delegate individually.
 - (void)cleanCrashReports;
 
 - (void)cleanCrashReportWithFilename:(NSString *)filename;
-
-- (void)persistUserProvidedMetaData:(MSAICrashMetaData *)userProvidedMetaData;
 
 - (void)leavingAppSafely;
 

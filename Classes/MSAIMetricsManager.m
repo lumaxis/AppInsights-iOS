@@ -162,17 +162,18 @@ static NSInteger const defaultSessionExpirationTime = 20;
 }
 
 - (void)trackException:(NSException *)exception{
-  PLCrashReporterSignalHandlerType signalHandlerType = PLCrashReporterSignalHandlerTypeBSD;
-  PLCrashReporterSymbolicationStrategy symbolicationStrategy = PLCrashReporterSymbolicationStrategyAll;
-  MSAIPLCrashReporterConfig *config = [[MSAIPLCrashReporterConfig alloc] initWithSignalHandlerType: signalHandlerType
-                                                                             symbolicationStrategy: symbolicationStrategy];
-  MSAIPLCrashReporter *cm = [[MSAIPLCrashReporter alloc] initWithConfiguration:config];
-  NSData *data = [cm generateLiveReportWithThread:pthread_mach_thread_np(pthread_self())];
-  MSAIPLCrashReport *report = [[MSAIPLCrashReport alloc] initWithData:data error:nil];
-  
+  pthread_t thread = pthread_self();
+
   dispatch_async(_metricEventQueue, ^{
+    PLCrashReporterSignalHandlerType signalHandlerType = PLCrashReporterSignalHandlerTypeBSD;
+    PLCrashReporterSymbolicationStrategy symbolicationStrategy = PLCrashReporterSymbolicationStrategyAll;
+    MSAIPLCrashReporterConfig *config = [[MSAIPLCrashReporterConfig alloc] initWithSignalHandlerType: signalHandlerType
+                                                                               symbolicationStrategy: symbolicationStrategy];
+    MSAIPLCrashReporter *cm = [[MSAIPLCrashReporter alloc] initWithConfiguration:config];
+    NSData *data = [cm generateLiveReportWithThread:pthread_mach_thread_np(thread)];
+    MSAIPLCrashReport *report = [[MSAIPLCrashReport alloc] initWithData:data error:nil];
     MSAIEnvelope *envelope = [[MSAIEnvelopeManager sharedManager] envelopeForCrashReport:(PLCrashReport *)report exception:exception];
-    [[MSAIChannel sharedChannel] enqueueEnvelope:envelope];
+    [[MSAIChannel sharedChannel] processEnvelope:envelope withCompletionBlock:nil];
   });
 }
 
@@ -213,14 +214,17 @@ static NSInteger const defaultSessionExpirationTime = 20;
 #pragma mark Track DataItem
 
 - (void)trackDataItem:(MSAITelemetryData *)dataItem{
-  MSAIEnvelope *envelope = [[MSAIEnvelopeManager sharedManager] envelopeForTelemetryData:dataItem];
-  [[MSAIChannel sharedChannel] enqueueEnvelope:envelope];
+  
+  if(![[MSAIChannel sharedChannel] isQueueBusy]){
+    MSAIEnvelope *envelope = [[MSAIEnvelopeManager sharedManager] envelopeForTelemetryData:dataItem];
+    [[MSAIChannel sharedChannel] enqueueEnvelope:envelope];
+  }
 }
 
 #pragma mark - Session update
 
 //TODO unregister Obeservers?!
-- (void) registerObservers {
+- (void)registerObservers {
   NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
   
   __weak typeof(self) weakSelf = self;

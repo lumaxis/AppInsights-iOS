@@ -3,18 +3,19 @@
 #import "MSAISenderPrivate.h"
 #import "MSAIPersistence.h"
 #import "MSAIEnvelope.h"
+#import "AppInsights.h"
 #import "AppInsightsPrivate.h"
+#import "MSAIAppInsights.h"
 
 @interface MSAISender ()
 
-@property (nonatomic, strong) NSArray *currentBundle;
-@property (getter=isSending) BOOL sending;
-
 @end
+
+static NSUInteger const defaultRequestLimit = 10;
 
 @implementation MSAISender
 
-@synthesize sending = _sending;
+@synthesize runningRequestsCount = _runningRequestsCount;
 
 #pragma mark - Initialize & configure shared instance
 
@@ -33,6 +34,7 @@
 - (void)configureWithAppClient:(MSAIAppClient *)appClient endpointPath:(NSString *)endpointPath {
   self.endpointPath = endpointPath;
   self.appClient = appClient;
+  self.maxRequestCount = defaultRequestLimit;
   [self registerObservers];
 }
 
@@ -44,11 +46,10 @@
   [center addObserverForName:kMSAIPersistenceSuccessNotification
                       object:nil
                        queue:nil
-                  usingBlock:^(NSNotification *note) {
+                  usingBlock:^(NSNotification *notification) {
                     typeof(self) strongSelf = weakSelf;
-                    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
                       
-                      // If something was persisted, we have to send it to the server.
                       [strongSelf sendSavedData];
                     });
                   }];
@@ -56,65 +57,67 @@
 
 #pragma mark - Sending
 
-- (void)sendSavedData {
+- (void)sendSavedData{
   
   @synchronized(self){
-    if(_sending)
+    if(_runningRequestsCount < _maxRequestCount){
+      _runningRequestsCount++;
+    }else{
       return;
-    else
-      _sending = YES;
+    }
   }
+  NSString *path = [[MSAIPersistence sharedInstance] requestNextPath];
+  NSArray *bundle = [[MSAIPersistence sharedInstance] bundleAtPath:path];
+  [self sendBundle:bundle withPath:path];
+}
+
+- (void)sendBundle:(NSArray *)bundle withPath:(NSString *)path{
   
-  NSArray *bundle = [MSAIPersistence nextBundle];
-  if(bundle && bundle.count > 0 && !self.currentBundle) {
-    self.currentBundle = bundle;
+  if(bundle && bundle.count > 0) {
     NSError *error = nil;
     NSData *json = [[self jsonStringFromArray:bundle] dataUsingEncoding:NSUTF8StringEncoding];
     if(!error) {
       NSString *urlString = [[(MSAIEnvelope *)bundle[0] name] isEqualToString:@"Microsoft.ApplicationInsights.Crash"] ? MSAI_CRASH_DATA_URL : MSAI_EVENT_DATA_URL;
       NSURLRequest *request = [self requestForData:json urlString:urlString];
-      [self sendRequest:request];
-    }
-    else {
-      MSAILog(@"Error creating JSON from bundle array, saving bundle back to disk");
-      [MSAIPersistence persistBundle:bundle ofType:MSAIPersistenceTypeRegular withCompletionBlock:nil];
-      self.sending = NO;
+      [self sendRequest:request path:path];
+    }else {
+      MSAILog(@"Error creating JSON from bundle array, don't save back to disk");
+      self.runningRequestsCount -= 1;
     }
   }else{
-    self.sending = NO;
+    self.runningRequestsCount -= 1;
   }
 }
 
-- (void)sendRequest:(NSURLRequest *)request {
-  __weak typeof(self) weakSelf = self;
+- (void)sendRequest:(NSURLRequest *)request path:(NSString *)path{
   
-  MSAIHTTPOperation *operation = [self.appClient
-                                  operationWithURLRequest:request
-                                  completion:^(MSAIHTTPOperation *operation, NSData *responseData, NSError *error) {
-                                    
-                                    typeof(self) strongSelf = weakSelf;
-                                    NSInteger statusCode = [operation.response statusCode];
-                                    self.currentBundle = nil;
-                                    self.sending = NO;
-                                    if(statusCode >= 200 && statusCode < 400) {
-                                      
-                                      MSAILog(@"Sent data with status code: %ld", (long) statusCode);
-                                      MSAILog(@"Response data:\n%@", [NSJSONSerialization JSONObjectWithData:responseData options:0 error:nil]);
-                                      
-                                      [strongSelf sendSavedData];
-                                      
-                                    } else {
-                                      MSAILog(@"Sending failed");
-                                    
-                                      //[MSAIPersistence persistBundle:self.currentBundle];
-                                      //TODO maybe trigger sending again or notify someone?
-                                    }
-                                  }];
+  if(!path || !request) return;
+  
+  __weak typeof(self) weakSelf = self;
+  MSAIHTTPOperation *operation = [self.appClient operationWithURLRequest:request completion:^(MSAIHTTPOperation *operation, NSData *responseData, NSError *error) {
+    typeof(self) strongSelf = weakSelf;
+    
+    self.runningRequestsCount -= 1;
+    NSInteger statusCode = [operation.response statusCode];
+
+    if(statusCode >= 200 && statusCode < 400) {
+      MSAILog(@"Sent data with status code: %ld", (long) statusCode);
+      MSAILog(@"Response data:\n%@", [NSJSONSerialization JSONObjectWithData:responseData options:0 error:nil]);
+      
+      [[MSAIPersistence sharedInstance] deleteBundleAtPath:path];
+      [strongSelf sendSavedData];
+    } else {
+      MSAILog(@"Sending MSAIAppInsights data failed");
+      [[MSAIPersistence sharedInstance] giveBackRequestedPath:path];
+    }
+  }];
   
   [self.appClient enqeueHTTPOperation:operation];
 }
 
+//TODO remove this because it is never used and it's not public?
 - (void)sendRequest:(NSURLRequest *)request withCompletionBlock:(MSAINetworkCompletionBlock)completion{
+  
   MSAIHTTPOperation *operation = [_appClient
                                   operationWithURLRequest:request
                                   completion:completion];
@@ -145,15 +148,15 @@
 
 #pragma mark - Getter/Setter
 
-- (BOOL)isSending {
-  @synchronized(self){
-    return _sending;
+- (NSUInteger)runningRequestsCount {
+  @synchronized(self) {
+    return _runningRequestsCount;
   }
 }
 
-- (void)setSending:(BOOL)sending {
-  @synchronized(self){
-    _sending = sending;
+- (void)setRunningRequestsCount:(NSUInteger)runningRequestsCount {
+  @synchronized(self) {
+    _runningRequestsCount = runningRequestsCount;
   }
 }
 

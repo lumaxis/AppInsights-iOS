@@ -9,6 +9,7 @@
 #import "AppInsights.h"
 #import "MSAIHelper.h"
 #import "MSAIKeychainUtils.h"
+#import "AppInsightsPrivate.h"
 
 
 @interface MSAIHelperTests : XCTestCase
@@ -25,11 +26,6 @@
 
 - (void)tearDown {
   // Tear-down code here.
-# pragma clang diagnostic push
-# pragma clang diagnostic ignored "-Wimplicit"
-  __gcov_flush();
-# pragma clang diagnostic pop
-  
   [super tearDown];
 }
 
@@ -103,6 +99,16 @@
   NSString *utcDateString = msai_utcDateString(testDate);
   
   assertThat(utcDateString, equalTo(@"1970-01-01T00:00:00.000Z"));
+}
+
+- (void)testUtcDateStringPerformane {
+  [self measureBlock:^{
+    for (int i = 0; i < 100; i++) {
+      NSDate *testDate = [NSDate dateWithTimeIntervalSince1970:0];
+      NSString *utcDateString = msai_utcDateString(testDate);
+      MSAILog(@"Timestamp %@", utcDateString);
+    }
+  }];
 }
 
 @end

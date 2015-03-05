@@ -16,7 +16,7 @@
 #import "MSAIEnvelopeManager.h"
 #import "MSAIEnvelopeManagerPrivate.h"
 #import "MSAIData.h"
-#import "MSAIKeychainUtils.h"
+
 
 #import <mach-o/loader.h>
 #import <mach-o/dyld.h>
@@ -24,13 +24,7 @@
 #include <sys/sysctl.h>
 
 // stores the set of crashreports that have been approved but aren't sent yet
-#define kMSAICrashApprovedReports @"MSAICrashApprovedReports"
-
-// keys for meta information associated to each crash
-#define kMSAICrashMetaUserName @"MSAICrashMetaUserName"
-#define kMSAICrashMetaUserEmail @"MSAICrashMetaUserEmail"
-#define kMSAICrashMetaUserID @"MSAICrashMetaUserID"
-#define kMSAICrashMetaApplicationLog @"MSAICrashMetaApplicationLog"
+#define kMSAICrashApprovedReports @"MSAICrashApprovedReports" //TODO remove this in next Sprint
 
 // internal keys
 NSString *const kMSAICrashManagerIsDisabled = @"MSAICrashManagerIsDisabled";
@@ -38,7 +32,7 @@ NSString *const kMSAICrashManagerIsDisabled = @"MSAICrashManagerIsDisabled";
 NSString *const kMSAIAppWentIntoBackgroundSafely = @"MSAIAppWentIntoBackgroundSafely";
 NSString *const kMSAIAppDidReceiveLowMemoryNotification = @"MSAIAppDidReceiveLowMemoryNotification";
 
-//TODO: don't use a class var?
+//TODO: don't use a static
 static MSAICrashManagerCallbacks msaiCrashCallbacks = {
     .context = NULL,
     .handleSignal = NULL
@@ -50,7 +44,7 @@ static void plcr_post_crash_callback(siginfo_t *info, ucontext_t *uap, void *con
     msaiCrashCallbacks.handleSignal(context);
 }
 
-//TODO: don't use a class var?
+//TODO: don't use static
 static PLCrashReporterCallbacks plCrashCallbacks = {
     .version = 0,
     .context = NULL,
@@ -81,13 +75,10 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
   //TODO does it make sense to have everything not initialised if the context is nil?
   if(context) {
     if(![MSAICrashManager sharedManager].isSetupCorrectly) {
-      [MSAICrashManager sharedManager].appContext = context;
       [[self sharedManager] startManager];
-      [MSAICrashManager sharedManager].isSetupCorrectly = YES;
     }
   }
 }
-
 
 /**
 *	 Main startup sequence initializing PLCrashReporter if it wasn't disabled
@@ -100,7 +91,6 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
 
     [self registerObservers];
     [self loadSettings];
-
 
     /* Configure our reporter */
 
@@ -129,9 +119,9 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
     // signal handler type is set
     // We only check for this if we are not in the App Store environment
 
-    if(![self.appContext isAppStoreEnvironment]) {
+    if(!msai_isAppStoreEnvironment()) {
       if(self.debuggerIsAttached) {
-        NSLog(@"[AppInsightsSDK] WARNING: Detecting crashes is NOT enabled due to running the app with a debugger attached.");
+        NSLog(@"[AppInsights] WARNING: Detecting crashes is NOT enabled due to running the app with a debugger attached.");
       }
     }
 
@@ -145,7 +135,7 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
       // and can show a debug warning log message, that the dev has to make sure the "newer" error handler
       // doesn't exit the process itself, because then all subsequent handlers would never be invoked.
       //
-      // Note: ANY error handler setup BEFORE AppInsightsSDK initialization will not be processed!
+      // Note: ANY error handler setup BEFORE AppInsights initialization will not be processed!
 
       // get the current top level error handler
       NSUncaughtExceptionHandler *initialHandler = NSGetUncaughtExceptionHandler();
@@ -161,7 +151,7 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
 
       // Enable the Crash Reporter
       if(![self.plCrashReporter enableCrashReporterAndReturnError:&error])
-        NSLog(@"[AppInsightsSDK] WARNING: Could not enable crash reporter: %@", [error localizedDescription]);
+        NSLog(@"[AppInsights] WARNING: Could not enable crash reporter: %@", [error localizedDescription]);
 
       // get the new current top level error handler, which should now be the one from PLCrashReporter
       NSUncaughtExceptionHandler *currentHandler = NSGetUncaughtExceptionHandler();
@@ -173,7 +163,7 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
         MSAILog(@"INFO: Exception handler successfully initialized.");
       } else {
         // this should never happen, theoretically only if NSSetUncaugtExceptionHandler() has some internal issues
-        NSLog(@"[AppInsightsSDK] ERROR: Exception handler could not be set. Make sure there is no other exception handler set up!");
+        NSLog(@"[AppInsights] ERROR: Exception handler could not be set. Make sure there is no other exception handler set up!");
       }
     }
   });
@@ -206,19 +196,18 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
   [[NSUserDefaults standardUserDefaults] setBool:NO forKey:kMSAIAppDidReceiveLowMemoryNotification];
   [[NSUserDefaults standardUserDefaults] synchronize];
 
+  [MSAICrashManager sharedManager].isSetupCorrectly = YES;
+  
   [self triggerDelayedProcessing];
 }
 
-
 - (void)initValues {
-  _timeintervalCrashInLastSessionOccured = -1; //TODO use 0 as initial value?
+  _timeintervalCrashInLastSessionOccured = -1;
 
   self.approvedCrashReports = [[NSMutableDictionary alloc] init];
 
   self.fileManager = [NSFileManager new];
   self.crashFiles = [NSMutableArray new];
-
-  //TODO crashManager is Enabled by default
 
   NSString *testValue = [[NSUserDefaults standardUserDefaults] stringForKey:kMSAICrashManagerIsDisabled];
   if(testValue) {
@@ -228,8 +217,8 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
   }
 
   self.crashesDir = msai_settingsDir();
-  self.settingsFile = [self.crashesDir stringByAppendingPathComponent:MSAI_CRASH_SETTINGS];
-  self.analyzerInProgressFile = [self.crashesDir stringByAppendingPathComponent:MSAI_CRASH_ANALYZER];
+  self.settingsFile = [self.crashesDir stringByAppendingPathComponent:kMSAICrashSettings];
+  self.analyzerInProgressFile = [self.crashesDir stringByAppendingPathComponent:kMSAICrashAnalyzer];
 
   if([self.fileManager fileExistsAtPath:self.analyzerInProgressFile]) {
     NSError *error = nil;
@@ -242,12 +231,11 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
 }
 
 #pragma mark - Configuration
-
+// Enable/Disable the CrashManager and store the setting in standardUserDefaults
 - (void)setCrashManagerDisabled:(BOOL)disableCrashManager {
   _isCrashManagerDisabled = disableCrashManager;
   [[NSUserDefaults standardUserDefaults] setBool:disableCrashManager forKey:kMSAICrashManagerIsDisabled];
 }
-
 
 /**
 *  Set the callback for PLCrashReporter
@@ -268,7 +256,6 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
 }
 
 #pragma mark - Debugging Helpers
-
 
 /**
 * Check if the debugger is attached
@@ -292,7 +279,7 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
     name[3] = getpid();
 
     if(sysctl(name, 4, &info, &info_size, NULL, 0) == -1) {
-      NSLog(@"[AppInsightsSDK] ERROR: Checking for a running debugger via sysctl() failed: %s", strerror(errno));
+      NSLog(@"[AppInsights] ERROR: Checking for a running debugger via sysctl() failed: %s", strerror(errno));
       debuggerIsAttached = false;
     }
 
@@ -304,10 +291,10 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
 }
 
 - (void)generateTestCrash {
-  if(![self.appContext isAppStoreEnvironment]) {
+  if(!msai_isAppStoreEnvironment()) {
 
     if(self.debuggerIsAttached) {
-      NSLog(@"[AppInsightsSDK] WARNING: The debugger is attached. The following crash cannot be detected by the SDK!");
+      NSLog(@"[AppInsights] WARNING: The debugger is attached. The following crash cannot be detected by the SDK!");
     }
 
     __builtin_trap();
@@ -402,93 +389,6 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
   }
 }
 
-#pragma mark - Meta Data for Crash Report
-
-//TODO move the whole persistence to MSAIPersistence
-
-/**
-*  Write a meta file for a new crash report
-*
-*  @param filename the crash reports temp filename
-*/
-- (void)storeMetaDataForCrashReportFilename:(NSString *)filename {
-  NSError *error = NULL;
-  NSMutableDictionary *metaDict = [NSMutableDictionary dictionaryWithCapacity:4];
-  NSString *applicationLog = @"";
-
-  [self addStringValueToKeychain:[self userNameForCrashReport] forKey:[NSString stringWithFormat:@"%@.%@", filename, kMSAICrashMetaUserName]];
-  [self addStringValueToKeychain:[self userEmailForCrashReport] forKey:[NSString stringWithFormat:@"%@.%@", filename, kMSAICrashMetaUserEmail]];
-  [self addStringValueToKeychain:[self userIDForCrashReport] forKey:[NSString stringWithFormat:@"%@.%@", filename, kMSAICrashMetaUserID]];
-
-  if(self.delegate != nil && [self.delegate respondsToSelector:@selector(applicationLogForCrashManager)]) {
-    applicationLog = [self.delegate applicationLogForCrashManager] ?: @"";
-  }
-  metaDict[kMSAICrashMetaApplicationLog] = applicationLog;
-
-  NSData *plist = [NSPropertyListSerialization dataWithPropertyList:(id) metaDict
-                                                             format:NSPropertyListBinaryFormat_v1_0
-                                                            options:0
-                                                              error:&error];
-  if(plist) {
-    [plist writeToFile:[self.crashesDir stringByAppendingPathComponent:[filename stringByAppendingPathExtension:@"meta"]] atomically:YES];
-  } else {
-    MSAILog(@"ERROR: Writing crash meta data failed. %@", error);
-  }
-}
-
-/**
-*	 Get the userID from the delegate which should be stored with the crash report
-*
-*	@return The userID value
-*/
-- (NSString *)userIDForCrashReport {
-  // first check the global keychain storage
-  NSString *userID = [self stringValueFromKeychainForKey:kMSAIMetaUserID] ?: @"";
-
-  if([MSAIAppInsights sharedInstance].delegate &&
-      [[MSAIAppInsights sharedInstance].delegate respondsToSelector:@selector(userIDForTelemetryManager:)]) {
-    userID = [[MSAIAppInsights sharedInstance].delegate
-        userIDForTelemetryManager:[MSAIAppInsights sharedInstance]] ?: @"";
-  }
-
-  return userID;
-}
-
-/**
-*	 Get the userName from the delegate which should be stored with the crash report
-*
-*	@return The userName value
-*/
-- (NSString *)userNameForCrashReport {
-  // first check the global keychain storage
-  NSString *username = [self stringValueFromKeychainForKey:kMSAIMetaUserName] ?: @"";
-
-  if([MSAIAppInsights sharedInstance].delegate &&
-      [[MSAIAppInsights sharedInstance].delegate respondsToSelector:@selector(userNameForTelemetryManager:)]) {
-    username = [[MSAIAppInsights sharedInstance].delegate
-        userNameForTelemetryManager:[MSAIAppInsights sharedInstance]] ?: @"";
-  }
-
-  return username;
-}
-
-/**
-*	 Get the userEmail from the delegate which should be stored with the crash report
-*
-*	@return The userEmail value
-*/
-- (NSString *)userEmailForCrashReport {
-  // first check the global keychain storage
-  NSString *useremail = [self stringValueFromKeychainForKey:kMSAIMetaUserEmail] ?: @"";
-
-  if([MSAIAppInsights sharedInstance].delegate &&
-      [[MSAIAppInsights sharedInstance].delegate respondsToSelector:@selector(userEmailForTelemetryManager:)]) {
-    useremail = [[MSAIAppInsights sharedInstance].delegate
-        userEmailForTelemetryManager:[MSAIAppInsights sharedInstance]] ?: @"";
-  }
-
-  return useremail;
-}
 
 #pragma mark - PLCrashReporter
 
@@ -535,8 +435,6 @@ static PLCrashReporterCallbacks plCrashCallbacks = {
         }
 
         [crashData writeToFile:[self.crashesDir stringByAppendingPathComponent:cacheFilename] atomically:YES];
-
-        [self storeMetaDataForCrashReportFilename:cacheFilename];
 
         NSString *incidentIdentifier = @"???";
         if(report.uuidRef != NULL) {
@@ -624,18 +522,13 @@ Get the filename of the first not approved crash report
     MSAILog(@"INFO: %lu pending crash reports found.", (unsigned long) [self.crashFiles count]);
     return YES;
   } else {
-    if(self.didCrashInLastSession) {//TODO does this make sense at all?
-      if(self.delegate != nil && [self.delegate respondsToSelector:@selector(crashManagerWillCancelSendingCrashReport)]) {
-        [self.delegate crashManagerWillCancelSendingCrashReport];
-      }
-
+    if(self.didCrashInLastSession) {
       _didCrashInLastSession = NO;
     }
 
     return NO;
   }
 }
-
 
 #pragma mark - Crash Report Processing
 
@@ -647,8 +540,7 @@ Get the filename of the first not approved crash report
 /**
 * Delayed startup processing for everything that does not to be done in the app startup runloop
 *
-* - Checks if there is ano
-* ther exception handler installed that may block ours
+* - Checks if there is another exception handler installed that may block ours
 * - Present UI if the user has to approve new crash reports
 * - Send pending approved crash reports
 */
@@ -668,7 +560,7 @@ Get the filename of the first not approved crash report
     // If the top level error handler differs from our own, then at least another one was added.
     // This could cause exception crashes not to be reported to AppInsights. See log message for details.
     if(self.exceptionHandler != currentHandler) {
-      MSAILog(@"[AppInsightsSDK] WARNING: Another exception handler was added. If this invokes any kind exit() after processing the exception, which causes any subsequent error handler not to be invoked, these crashes will NOT be reported to AppInsights!");
+      MSAILog(@"[AppInsights] WARNING: Another exception handler was added. If this invokes any kind exit() after processing the exception, which causes any subsequent error handler not to be invoked, these crashes will NOT be reported to AppInsights!");
     }
   }
 
@@ -681,16 +573,8 @@ Get the filename of the first not approved crash report
     if(notApprovedReportFilename && !self.lastCrashFilename) {
       self.lastCrashFilename = [notApprovedReportFilename lastPathComponent];
     }
-
-    if(msai_isRunningInAppExtension()) {
-      [self sendNextCrashReport];
-    } else if(self.isCrashManagerDisabled && notApprovedReportFilename) {
-      if(self.delegate != nil && [self.delegate respondsToSelector:@selector(crashManagerWillShowSubmitCrashReportAlert)]) {
-        [self.delegate crashManagerWillShowSubmitCrashReportAlert];
-      }
-    } else {
-      [self sendNextCrashReport];
-    }
+    
+    [self createCrashReport];
   }
 }
 
@@ -716,13 +600,13 @@ Get the filename of the first not approved crash report
   fakeCrashEnvelope.data = data;
   fakeCrashEnvelope.name = crashData.envelopeTypeName;
 
-  [MSAIPersistence persistFakeReportBundle:@[fakeCrashEnvelope]];
+  [[MSAIPersistence sharedInstance] persistFakeReportBundle:@[fakeCrashEnvelope]];
 }
 
 /***
-* Gathers all collected data and constructs the XML structure and hands everything to the Channel
+* Gathers all collected data and constructs Crash into an Envelope for processing
 */
-- (void)sendNextCrashReport { //TODO rename this!
+- (void)createCrashReport { //TODO rename this!
   NSError *error = NULL;
 
   if([self.crashFiles count] == 0)
@@ -737,7 +621,7 @@ Get the filename of the first not approved crash report
     MSAIEnvelope *crashEnvelope = nil;
 
     if([[cacheFilename pathExtension] isEqualToString:@"fake"]) {
-      NSArray *fakeReportBundle = [MSAIPersistence fakeReportBundle];
+      NSArray *fakeReportBundle = [[MSAIPersistence sharedInstance] fakeReportBundle];
       if(fakeReportBundle && fakeReportBundle.count > 0) {
         crashEnvelope = fakeReportBundle[0];
         if([crashEnvelope.appId compare:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"]] == NSOrderedSame) {
@@ -759,7 +643,7 @@ Get the filename of the first not approved crash report
     if(report) {
       crashEnvelope = [MSAICrashDataProvider crashDataForCrashReport:report];
       if([report.applicationInfo.applicationVersion compare:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"]] == NSOrderedSame) {
-          //TODO Check if this has to be added again
+        //TODO Check if this has to be added again
 //        _crashIdenticalCurrentVersion = YES;
 
       }
@@ -767,11 +651,11 @@ Get the filename of the first not approved crash report
 
     if([report.applicationInfo.applicationVersion compare:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"]] == NSOrderedSame) {
       //TODO Check if this has to be added again
-        //        _crashIdenticalCurrentVersion = YES;
+//        _crashIdenticalCurrentVersion = YES;
     }
 
     // store this crash report as user approved, so if it fails it will retry automatically
-    self.approvedCrashReports[filename] = @YES; //TODO there is no more "approve"-thingies
+    self.approvedCrashReports[filename] = @YES; //TODO this can be removed
 
     [self saveSettings];
 
@@ -783,11 +667,10 @@ Get the filename of the first not approved crash report
 }
 
 /**
-*	 Send the XML data to the server
+*	 Send the bundled up crash (in an envelope) over to the channel for persistence & sending
 *
-* Wraps the XML structure into a POST body and starts sending the data asynchronously
-*
-*	@param	xml	The XML data that needs to be send to the server
+*	@param	filename the file that contains the crashreport
+*	@param envelope the bundled up crash data
 */
 - (void)processCrashReportWithFilename:(NSString *)filename envelope:(MSAIEnvelope *)envelope {
 
@@ -801,7 +684,7 @@ Get the filename of the first not approved crash report
     //TODO: sending is done in persistence layer --> notify user that crashes are available to be sent?!
     if(success) {
       [strongSelf cleanCrashReportWithFilename:filename];
-      [strongSelf sendNextCrashReport];
+      [strongSelf createCrashReport];
     }
   }];
 
@@ -864,7 +747,7 @@ Get the filename of the first not approved crash report
 }
 
 /**
-*	 Remove all crash reports and stored meta data for each from the file system and keychain
+*	 Remove all crash reports for each from the file system
 *
 * This is currently only used as a helper method for tests
 */
@@ -889,46 +772,22 @@ Get the filename of the first not approved crash report
   [self.fileManager removeItemAtPath:[filename stringByAppendingString:@".meta"] error:&error];
   [self.fileManager removeItemAtPath:[filename stringByAppendingString:@".desc"] error:&error];
 
-  NSString *cacheFilename = [filename lastPathComponent];
-  [self removeKeyFromKeychain:[NSString stringWithFormat:@"%@.%@", cacheFilename, kMSAICrashMetaUserName]];
-  [self removeKeyFromKeychain:[NSString stringWithFormat:@"%@.%@", cacheFilename, kMSAICrashMetaUserEmail]];
-  [self removeKeyFromKeychain:[NSString stringWithFormat:@"%@.%@", cacheFilename, kMSAICrashMetaUserID]];
-
   [self.crashFiles removeObject:filename];
   [self.approvedCrashReports removeObjectForKey:filename];
 
   [self saveSettings];
 }
 
-
-
-- (void)persistUserProvidedMetaData:(MSAICrashMetaData *)userProvidedMetaData {
-  if(!userProvidedMetaData) return;
-
-  if(userProvidedMetaData.userDescription && [userProvidedMetaData.userDescription length] > 0) {
-    NSError *error;
-    [userProvidedMetaData.userDescription writeToFile:[NSString stringWithFormat:@"%@.desc", [self.crashesDir stringByAppendingPathComponent:self.lastCrashFilename]] atomically:YES encoding:NSUTF8StringEncoding error:&error];
-  }
-
-  if(userProvidedMetaData.userName && [userProvidedMetaData.userName length] > 0) {
-    [self addStringValueToKeychain:userProvidedMetaData.userName forKey:[NSString stringWithFormat:@"%@.%@", self.lastCrashFilename, kMSAICrashMetaUserName]];
-
-  }
-
-  if(userProvidedMetaData.userEmail && [userProvidedMetaData.userEmail length] > 0) {
-    [self addStringValueToKeychain:userProvidedMetaData.userEmail forKey:[NSString stringWithFormat:@"%@.%@", self.lastCrashFilename, kMSAICrashMetaUserEmail]];
-  }
-
-  if(userProvidedMetaData.userID && [userProvidedMetaData.userID length] > 0) {
-    [self addStringValueToKeychain:userProvidedMetaData.userID forKey:[NSString stringWithFormat:@"%@.%@", self.lastCrashFilename, kMSAICrashMetaUserID]];
-
-  }
-}
-
+//Safe info about safe termination of the app to NSUserDefaults
 - (void)leavingAppSafely {
   if(self.appNotTerminatingCleanlyDetectionEnabled)
     [[NSUserDefaults standardUserDefaults] setBool:YES forKey:kMSAIAppWentIntoBackgroundSafely];
 }
+
+/**
+* Stores info about didEnterBackground in NSUserDefaults.
+*
+*/
 
 - (void)appEnteredForeground {
   // we disable kill detection while the debugger is running, since we'd get only false positives if the app is terminated by the user using the debugger
@@ -941,37 +800,6 @@ Get the filename of the first not approved crash report
 
 - (void)reportError:(NSError *)error {
   MSAILog(@"ERROR: %@", [error localizedDescription]);
-}
-
-#pragma mark - Keychain
-
-- (BOOL)addStringValueToKeychain:(NSString *)stringValue forKey:(NSString *)key {
-  if(!key || !stringValue)
-    return NO;
-
-  NSError *error = nil;
-  return [MSAIKeychainUtils storeUsername:key
-                              andPassword:stringValue
-                           forServiceName:msai_keychainMSAIServiceName()
-                           updateExisting:YES
-                                    error:&error];
-}
-
-- (NSString *)stringValueFromKeychainForKey:(NSString *)key {
-  if(!key)
-    return nil;
-
-  NSError *error = nil;
-  return [MSAIKeychainUtils getPasswordForUsername:key
-                                    andServiceName:msai_keychainMSAIServiceName()
-                                             error:&error];
-}
-
-- (BOOL)removeKeyFromKeychain:(NSString *)key {
-  NSError *error = nil;
-  return [MSAIKeychainUtils deleteItemForUsername:key
-                                   andServiceName:msai_keychainMSAIServiceName()
-                                            error:&error];
 }
 
 @end
